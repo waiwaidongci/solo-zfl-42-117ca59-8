@@ -51,11 +51,35 @@
     dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
     .dialog-body { padding: 16px; display: grid; gap: 10px; }
     .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #e4ece9; color: var(--teal); margin: 0 4px 4px 0; }
+    .tag.warn { background: #f4e8d3; color: var(--amber); }
+    .tag.done { background: #dfe9df; color: #3c6e47; }
+    .msg { font-size: 13px; padding: 8px 10px; border-radius: 6px; margin: 10px 0; display: none; }
+    .msg.ok { display: block; background: #e3efe6; color: #2f5d3a; border: 1px solid #bcd8c2; }
+    .msg.err { display: block; background: #f6e3e3; color: #8a3436; border: 1px solid #e0b8b8; }
+    .craft-row, .proc-card, .settle-row { border: 1px solid #d7e0dc; border-left: 4px solid var(--teal); border-radius: 7px; background: #fff; padding: 10px; margin-bottom: 8px; }
+    .proc-card.paused { border-left-color: var(--amber); }
+    .proc-card.done { border-left-color: #3c6e47; }
+    .skills { font-size: 12px; color: var(--muted); }
+    .skills label { display: inline-flex; gap: 4px; align-items: center; margin-right: 12px; }
+    .skills input { width: auto; }
+    .settle-grid { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
+    .settle-item { display: block; border: 1px solid #d7e0dc; border-radius: 6px; padding: 7px 9px; margin: 8px 0; font-size: 13px; color: var(--ink); }
+    .settle-item input { width: auto; margin-right: 6px; }
+    .logline { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .rate-adjust { display: flex; gap: 6px; margin-top: 8px; }
+    .rate-adjust input, .rate-adjust select { flex: 1; width: auto; padding: 6px 8px; }
+    .rate-adjust button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+    h3.sub { margin: 14px 0 8px; font-size: 14px; }
+    .addproc { display: flex; gap: 6px; }
+    .addproc select { flex: 1; }
+    #createSettleBtn { margin-top: 4px; }
     @media (max-width: 980px) {
       header { display: block; padding: 18px; }
       main { padding: 16px; }
       .top, .lists, .toolbar { grid-template-columns: 1fr; }
       .grid2 { grid-template-columns: 1fr; }
+      .settle-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -63,7 +87,7 @@
   <header>
     <div>
       <h1>小型漆线雕工坊管理</h1>
-      <div class="sub">贴线、阴干、上金粉、待交付的作品流转与缺陷追踪</div>
+      <div class="sub">贴线、阴干、上金粉、待交付的作品流转与缺陷追踪 ｜ 工匠排班与工时结算</div>
     </div>
     <button id="exportBtn" class="secondary">导出 JSON</button>
   </header>
@@ -118,6 +142,70 @@
         <div id="board" class="board"></div>
       </section>
     </section>
+
+    <section class="panel" id="craftPanel">
+      <h2>工匠登记</h2>
+      <form id="craftForm">
+        <div class="grid2">
+          <label>姓名<input name="cname" required placeholder="林师傅"></label>
+          <label>日工时上限（小时）<input name="dailyCap" type="number" min="1" max="24" value="8" required></label>
+        </div>
+        <div class="grid2">
+          <label>计费方式<select name="rateType"><option>计时</option><option>计件</option></select></label>
+          <label>费率（元/小时 或 元/件）<input name="rate" type="number" min="0.01" step="0.01" required placeholder="80"></label>
+        </div>
+        <div class="skills">可承担工序：
+          <label><input type="checkbox" name="skills" value="贴线">贴线</label>
+          <label><input type="checkbox" name="skills" value="阴干">阴干</label>
+          <label><input type="checkbox" name="skills" value="上金粉">上金粉</label>
+          <label><input type="checkbox" name="skills" value="修整">修整</label>
+          <label><input type="checkbox" name="skills" value="质检">质检</label>
+        </div>
+        <button type="submit">登记工匠</button>
+      </form>
+      <div id="craftMsg" class="msg"></div>
+      <div id="craftList"></div>
+    </section>
+
+    <section class="panel" id="schedPanel">
+      <h2>工序排班</h2>
+      <div class="grid2">
+        <label>选择作品<select id="procWorkSelect"></select></label>
+        <label>添加工序
+          <span class="addproc">
+            <select id="procNameSelect">
+              <option>贴线</option>
+              <option>阴干</option>
+              <option>上金粉</option>
+              <option>修整</option>
+              <option>质检</option>
+            </select>
+            <button type="button" id="addProcBtn" class="secondary">添加</button>
+          </span>
+        </label>
+      </div>
+      <div id="actionMsg" class="msg"></div>
+      <div id="procList"></div>
+      <h3 class="sub">撤回记录</h3>
+      <div id="withdrawList"></div>
+    </section>
+
+    <section class="panel" id="settlePanel">
+      <h2>工时结算</h2>
+      <div class="settle-grid">
+        <div>
+          <label>选择工匠<select id="settleCraftSelect"></select></label>
+          <div id="settleItems"></div>
+          <button type="button" id="createSettleBtn">生成结算单</button>
+          <div id="settleMsg" class="msg"></div>
+        </div>
+        <div>
+          <div id="settleList"></div>
+          <h3 class="sub">冲正记录</h3>
+          <div id="reversalList"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <dialog id="detailDialog">
@@ -130,6 +218,52 @@
       <div class="actions">
         <button id="saveDefect" class="warn">保存缺陷</button>
         <button id="closeDialog" class="secondary">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="scheduleDialog">
+    <div class="dialog-body">
+      <h2>安排排班</h2>
+      <label>工匠<select id="schedCraft"></select></label>
+      <div class="grid2">
+        <label>日期<input id="schedDate" type="date"></label>
+        <label>开始时段（0–23）<input id="schedStart" type="number" min="0" max="23" value="9"></label>
+      </div>
+      <label>预计工时（小时）<input id="schedHours" type="number" min="0.5" step="0.5" value="4"></label>
+      <div id="schedErr" class="msg"></div>
+      <div class="actions">
+        <button type="button" id="schedOk">确认排班</button>
+        <button type="button" id="schedCancel" class="secondary">取消</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="rescheduleDialog">
+    <div class="dialog-body">
+      <h2>改期</h2>
+      <div id="reschedInfo" class="meta"></div>
+      <div class="grid2">
+        <label>新日期<input id="reschedDate" type="date"></label>
+        <label>新开始时段（0–23）<input id="reschedStart" type="number" min="0" max="23"></label>
+      </div>
+      <div class="meta">改期若与同一工匠其他排班冲突，将整单撤回并记录原因；费率保持排班时锁定值。</div>
+      <div id="reschedErr" class="msg"></div>
+      <div class="actions">
+        <button type="button" id="reschedOk">确认改期</button>
+        <button type="button" id="reschedCancel" class="secondary">取消</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="askDialog">
+    <div class="dialog-body">
+      <h2 id="askTitle">输入</h2>
+      <label><input id="askInput"></label>
+      <div id="askErr" class="msg"></div>
+      <div class="actions">
+        <button type="button" id="askOk">确定</button>
+        <button type="button" id="askCancel" class="secondary">取消</button>
       </div>
     </div>
   </dialog>
@@ -284,6 +418,594 @@
     window.showDetail = showDetail;
     save();
     render();
+  </script>
+
+  <script>
+    (function () {
+      "use strict";
+      const PROC_CATALOG = ["贴线", "阴干", "上金粉", "修整", "质检"];
+      const TRANSITIONS = {
+        "待安排": ["已排班"],
+        "已排班": ["进行中"],
+        "进行中": ["待验收"],
+        "待验收": ["已完成", "进行中"],
+        "已完成": []
+      };
+      const K = {
+        craft: "zfl42Craftsmen", proc: "zfl42Processes", settle: "zfl42Settlements",
+        rev: "zfl42Reversals", wd: "zfl42Withdrawals", seq: "zfl42SettleSeq"
+      };
+      const load = key => JSON.parse(localStorage.getItem(key) || "null");
+      const uid = () => crypto.randomUUID();
+      const nowStr = () => new Date().toLocaleString();
+      const yuan = n => "¥" + Number((Math.round(n * 100) / 100).toFixed(2));
+      const $ = s => document.querySelector(s);
+
+      function seedCraftsmen() {
+        return [
+          { id: uid(), name: "林文泉", skills: ["贴线", "修整"], dailyCap: 8, rateType: "计时", rate: 80, logs: ["登记工匠"] },
+          { id: uid(), name: "陈巧云", skills: ["上金粉", "质检"], dailyCap: 6, rateType: "计件", rate: 150, logs: ["登记工匠"] },
+          { id: uid(), name: "王铁生", skills: ["贴线", "阴干", "上金粉", "修整", "质检"], dailyCap: 8, rateType: "计时", rate: 95, logs: ["登记工匠"] }
+        ];
+      }
+      function defaultChain(work) {
+        return ["贴线", "阴干", "上金粉", "质检"].map((name, i) => ({
+          id: uid(), workId: work.id, name, seq: i + 1,
+          status: "待安排", paused: false, schedule: null,
+          accumulatedHours: 0, settled: false, settlementId: null,
+          logs: [`创建工序「${name}」`]
+        }));
+      }
+
+      let craftsmen = load(K.craft) || seedCraftsmen();
+      let processes = load(K.proc);
+      if (!processes) {
+        processes = [];
+        works.forEach(w => defaultChain(w).forEach(p => processes.push(p)));
+      }
+      let settlements = load(K.settle) || [];
+      let reversals = load(K.rev) || [];
+      let withdrawals = load(K.wd) || [];
+      let settleSeq = load(K.seq) || 1;
+
+      const craftForm = $("#craftForm");
+      const craftList = $("#craftList");
+      const craftMsg = $("#craftMsg");
+      const procWorkSelect = $("#procWorkSelect");
+      const procNameSelect = $("#procNameSelect");
+      const addProcBtn = $("#addProcBtn");
+      const actionMsg = $("#actionMsg");
+      const procList = $("#procList");
+      const withdrawList = $("#withdrawList");
+      const settleCraftSelect = $("#settleCraftSelect");
+      const settleItems = $("#settleItems");
+      const settleMsg = $("#settleMsg");
+      const settleList = $("#settleList");
+      const reversalList = $("#reversalList");
+      const scheduleDialog = $("#scheduleDialog");
+      const rescheduleDialog = $("#rescheduleDialog");
+      const askDialog = $("#askDialog");
+
+      function saveSched() {
+        localStorage.setItem(K.craft, JSON.stringify(craftsmen));
+        localStorage.setItem(K.proc, JSON.stringify(processes));
+        localStorage.setItem(K.settle, JSON.stringify(settlements));
+        localStorage.setItem(K.rev, JSON.stringify(reversals));
+        localStorage.setItem(K.wd, JSON.stringify(withdrawals));
+        localStorage.setItem(K.seq, JSON.stringify(settleSeq));
+      }
+
+      function flash(el, text, ok) {
+        el.textContent = text;
+        el.className = "msg " + (ok ? "ok" : "err");
+      }
+
+      function workLabel(workId) {
+        const w = works.find(x => x.id === workId);
+        return w ? `${w.theme}·${w.base}` : "（作品已删除）";
+      }
+      const findProc = id => processes.find(p => p.id === id);
+      const findCraft = id => craftsmen.find(c => c.id === id);
+
+      /* ---------- 排班冲突校验：技能 / 日上限 / 时段重叠 ---------- */
+      function validateSlot(craftsmanId, procName, date, startHour, estHours, excludePid) {
+        const c = findCraft(craftsmanId);
+        if (!c) return "工匠不存在";
+        if (!c.skills.includes(procName))
+          return `技能不匹配：${c.name} 未登记「${procName}」工序`;
+        const dayLoad = processes.filter(p =>
+          p.schedule && p.schedule.craftsmanId === craftsmanId &&
+          p.schedule.date === date && p.id !== excludePid);
+        const used = dayLoad.reduce((s, p) => s + p.schedule.estHours, 0);
+        if (used + estHours > c.dailyCap)
+          return `超出日工时上限：${c.name} ${date} 已排 ${used}h，本次 ${estHours}h，上限 ${c.dailyCap}h`;
+        const ns = startHour, ne = startHour + estHours;
+        for (const p of dayLoad) {
+          const s = p.schedule.startHour, e = s + p.schedule.estHours;
+          if (ns < e && s < ne)
+            return `时段重叠：与「${workLabel(p.workId)}·${p.name}」${s}:00–${e}:00 冲突`;
+        }
+        return null;
+      }
+
+      /* ---------- 排班 ---------- */
+      function scheduleProcess(pid, craftsmanId, date, startHour, estHours) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.paused) return { ok: false, msg: `「${p.name}」已暂停，请先恢复` };
+        if (p.status !== "待安排") return { ok: false, msg: `仅「待安排」工序可排班，当前为「${p.status}」` };
+        if (!date) return { ok: false, msg: "请选择排班日期" };
+        if (!(estHours > 0)) return { ok: false, msg: "预计工时必须大于 0" };
+        if (!(startHour >= 0 && startHour <= 23)) return { ok: false, msg: "开始时段需在 0–23 之间" };
+        if (startHour + estHours > 24) return { ok: false, msg: "排班时段超出当日 24:00" };
+        const c = findCraft(craftsmanId);
+        if (!c) return { ok: false, msg: "请选择工匠" };
+        const err = validateSlot(craftsmanId, p.name, date, startHour, estHours, null);
+        if (err) return { ok: false, msg: err };
+        p.schedule = {
+          craftsmanId, craftsmanName: c.name, date, startHour, estHours,
+          rateType: c.rateType, rate: c.rate, scheduledAt: nowStr()
+        };
+        p.status = "已排班";
+        p.logs.push(`${nowStr()} 排班：${c.name} ${date} ${startHour}:00 起 ${estHours}h，${c.rateType} ¥${c.rate}（排班时锁定）`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `排班成功：${c.name} ${date} ${startHour}:00 起 ${estHours}h，费率按排班时点锁定` };
+      }
+
+      /* ---------- 工序状态机 ---------- */
+      function tryTransition(pid, target, reason) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.paused) return { ok: false, msg: `「${p.name}」已暂停，请先恢复再流转` };
+        if (p.status === "已完成") return { ok: false, msg: `禁止重复完成：「${p.name}」已完结` };
+        if (!(TRANSITIONS[p.status] || []).includes(target))
+          return { ok: false, msg: `禁止越序：「${p.name}」不能从「${p.status}」直接变为「${target}」` };
+        if (p.status === "待验收" && target === "进行中" && !reason)
+          return { ok: false, msg: "退回返工必须填写原因" };
+        if (target === "已完成" && p.accumulatedHours === 0 && p.schedule)
+          p.accumulatedHours = p.schedule.estHours;
+        p.status = target;
+        p.logs.push(`${nowStr()} 流转为「${target}」${reason ? "，原因：" + reason : ""}`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `「${p.name}」已流转为「${target}」` };
+      }
+
+      /* ---------- 暂停 / 恢复（保留原排班与累计工时） ---------- */
+      function pauseProcess(pid) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.paused) return { ok: false, msg: "已处于暂停状态" };
+        if (!["已排班", "进行中"].includes(p.status))
+          return { ok: false, msg: `仅「已排班/进行中」可暂停，当前为「${p.status}」` };
+        p.paused = true;
+        p.logs.push(`${nowStr()} 暂停（保留排班与累计工时 ${p.accumulatedHours}h）`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `「${p.name}」已暂停，原排班与累计工时保留` };
+      }
+      function resumeProcess(pid) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (!p.paused) return { ok: false, msg: "未处于暂停状态" };
+        p.paused = false;
+        p.logs.push(`${nowStr()} 恢复（排班与累计工时 ${p.accumulatedHours}h 保持不变）`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `「${p.name}」已恢复，原排班与累计工时 ${p.accumulatedHours}h 保留` };
+      }
+      function logHours(pid, hours) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.paused) return { ok: false, msg: `「${p.name}」已暂停，请先恢复` };
+        if (p.status !== "进行中") return { ok: false, msg: `仅「进行中」可记工时，当前为「${p.status}」` };
+        if (!(hours > 0)) return { ok: false, msg: "工时必须大于 0" };
+        p.accumulatedHours = Math.round((p.accumulatedHours + hours) * 100) / 100;
+        p.logs.push(`${nowStr()} 记工时 +${hours}h，累计 ${p.accumulatedHours}h`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `已记工时 ${hours}h，累计 ${p.accumulatedHours}h` };
+      }
+
+      /* ---------- 撤回与改期 ---------- */
+      function doWithdraw(p, reason) {
+        withdrawals.unshift({
+          id: uid(), processId: p.id, workLabel: workLabel(p.workId), processName: p.name,
+          craftsmanName: p.schedule.craftsmanName, schedule: { ...p.schedule },
+          reason, createdAt: nowStr()
+        });
+        p.logs.push(`${nowStr()} 整单撤回：${reason}`);
+        p.schedule = null;
+        p.status = "待安排";
+        p.paused = false;
+      }
+      function withdrawProcess(pid, reason) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.status !== "已排班" || !p.schedule) return { ok: false, msg: `仅「已排班」工序可撤回，当前为「${p.status}」` };
+        if (!reason) return { ok: false, msg: "撤回必须填写原因" };
+        doWithdraw(p, reason);
+        saveSched(); renderSched();
+        return { ok: true, msg: `「${p.name}」排班已整单撤回` };
+      }
+      function rescheduleProcess(pid, date, startHour) {
+        const p = findProc(pid);
+        if (!p) return { ok: false, msg: "工序不存在" };
+        if (p.paused) return { ok: false, msg: `「${p.name}」已暂停，请先恢复` };
+        if (p.status !== "已排班" || !p.schedule) return { ok: false, msg: `仅「已排班」工序可改期，当前为「${p.status}」` };
+        if (!date) return { ok: false, msg: "请选择新日期" };
+        if (!(startHour >= 0 && startHour <= 23)) return { ok: false, msg: "开始时段需在 0–23 之间" };
+        const est = p.schedule.estHours;
+        if (startHour + est > 24) return { ok: false, msg: "改期后时段超出当日 24:00" };
+        const err = validateSlot(p.schedule.craftsmanId, p.name, date, startHour, est, p.id);
+        if (err) {
+          doWithdraw(p, `改期冲突：${err}`);
+          saveSched(); renderSched();
+          return { ok: false, withdrawn: true, msg: `改期冲突，整单已撤回：${err}` };
+        }
+        p.schedule.date = date;
+        p.schedule.startHour = startHour;
+        p.logs.push(`${nowStr()} 改期至 ${date} ${startHour}:00（费率保持排班时锁定值）`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `改期成功：${date} ${startHour}:00 起 ${est}h` };
+      }
+
+      /* ---------- 工匠费率调整（已排班工序保持快照） ---------- */
+      function adjustRate(cid, rateType, rate) {
+        const c = findCraft(cid);
+        if (!c) return { ok: false, msg: "工匠不存在" };
+        if (!(rate > 0)) return { ok: false, msg: "费率必须大于 0" };
+        c.rateType = rateType;
+        c.rate = rate;
+        c.logs.push(`${nowStr()} 费率调整为 ${rateType} ¥${rate}（已排班工序保持原锁定费率）`);
+        saveSched(); renderSched();
+        return { ok: true, msg: `${c.name} 费率已调整为 ${rateType} ¥${rate}，已排班工序费率不变` };
+      }
+
+      /* ---------- 结算 ---------- */
+      function itemAmount(p) {
+        const s = p.schedule;
+        return s.rateType === "计时" ? Math.round(s.rate * p.accumulatedHours * 100) / 100 : s.rate;
+      }
+      function createSettlement(craftsmanId, processIds) {
+        const c = findCraft(craftsmanId);
+        if (!c) return { ok: false, msg: "请选择工匠" };
+        if (!processIds.length) return { ok: false, msg: "请至少选择一条待结算工序" };
+        const items = processIds.map(findProc);
+        for (const p of items) {
+          if (!p) return { ok: false, msg: "工序不存在" };
+          if (!p.schedule || p.schedule.craftsmanId !== craftsmanId)
+            return { ok: false, msg: `「${p.name}」不属于工匠 ${c.name} 的排班` };
+          if (p.status !== "已完成")
+            return { ok: false, msg: `禁止未验收结算：「${workLabel(p.workId)}·${p.name}」当前为「${p.status}」` };
+          if (p.settled) return { ok: false, msg: `「${p.name}」已在其他结算单中` };
+        }
+        const types = new Set(items.map(p => p.schedule.rateType));
+        if (types.size > 1) return { ok: false, msg: "计件与计时不能混用，请分开生成结算单" };
+        const rateType = items[0].schedule.rateType;
+        const st = {
+          id: uid(), seq: `JS-${String(settleSeq++).padStart(3, "0")}`,
+          craftsmanId, craftsmanName: c.name, rateType,
+          items: items.map(p => ({
+            processId: p.id, workLabel: workLabel(p.workId), processName: p.name,
+            hours: p.accumulatedHours, pieces: rateType === "计件" ? 1 : 0,
+            rate: p.schedule.rate, amount: itemAmount(p)
+          })),
+          total: 0, status: "草稿", createdAt: nowStr(), lockedAt: null
+        };
+        st.total = Math.round(st.items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+        settlements.unshift(st);
+        items.forEach(p => { p.settled = true; p.settlementId = st.id; p.logs.push(`${nowStr()} 纳入结算单 ${st.seq}`); });
+        saveSched(); renderSched();
+        return { ok: true, msg: `结算单 ${st.seq} 已生成（草稿），合计 ${yuan(st.total)}` };
+      }
+      function lockSettlement(sid) {
+        const st = settlements.find(s => s.id === sid);
+        if (!st) return { ok: false, msg: "结算单不存在" };
+        if (st.status !== "草稿")
+          return { ok: false, msg: st.status === "已锁定" ? "结算单已锁定，不可修改" : "已冲正的单据不可再操作" };
+        st.status = "已锁定";
+        st.lockedAt = nowStr();
+        saveSched(); renderSched();
+        return { ok: true, msg: `结算单 ${st.seq} 已锁定，不可修改` };
+      }
+      function voidSettlement(sid) {
+        const st = settlements.find(s => s.id === sid);
+        if (!st) return { ok: false, msg: "结算单不存在" };
+        if (st.status !== "草稿") return { ok: false, msg: "结算单已锁定，不可修改" };
+        settlements = settlements.filter(s => s.id !== sid);
+        st.items.forEach(it => {
+          const p = findProc(it.processId);
+          if (p) { p.settled = false; p.settlementId = null; }
+        });
+        saveSched(); renderSched();
+        return { ok: true, msg: `草稿单 ${st.seq} 已作废，工序释放为待结算` };
+      }
+      function reverseSettlement(sid, reason) {
+        const st = settlements.find(s => s.id === sid);
+        if (!st) return { ok: false, msg: "结算单不存在" };
+        if (st.status !== "已锁定") return { ok: false, msg: "仅「已锁定」的结算单可冲正" };
+        if (!reason) return { ok: false, msg: "冲正必须填写原因" };
+        reversals.unshift({
+          id: uid(), settlementId: st.id, settlementSeq: st.seq, craftsmanName: st.craftsmanName,
+          reason, amount: -st.total, createdAt: nowStr()
+        });
+        st.status = "已冲正";
+        st.items.forEach(it => {
+          const p = findProc(it.processId);
+          if (p) {
+            p.settled = false; p.settlementId = null;
+            p.logs.push(`${nowStr()} 结算单 ${st.seq} 被冲正：${reason}`);
+          }
+        });
+        saveSched(); renderSched();
+        return { ok: true, msg: `结算单 ${st.seq} 已冲正，冲正记录已引用原单` };
+      }
+
+      /* ---------- 渲染 ---------- */
+      function renderCrafts() {
+        craftList.innerHTML = craftsmen.length ? craftsmen.map(c => `
+          <div class="craft-row" data-cid="${c.id}">
+            <b>${c.name}</b>
+            <span class="tag">${c.rateType} ¥${c.rate}${c.rateType === "计时" ? "/小时" : "/件"}</span>
+            <div class="meta">可承担：${c.skills.join("、")} ｜ 日工时上限 ${c.dailyCap}h</div>
+            <div class="rate-adjust">
+              <select class="type-select">
+                <option ${c.rateType === "计时" ? "selected" : ""}>计时</option>
+                <option ${c.rateType === "计件" ? "selected" : ""}>计件</option>
+              </select>
+              <input class="rate-input" type="number" min="0.01" step="0.01" value="${c.rate}">
+              <button type="button" class="secondary" data-act="rate">调整费率</button>
+            </div>
+          </div>`).join("") : `<div class="empty">暂无工匠</div>`;
+      }
+      function refreshWorkSelect() {
+        const cur = procWorkSelect.value;
+        procWorkSelect.innerHTML = works.map(w => `<option value="${w.id}">${w.theme}·${w.base}</option>`).join("");
+        if (works.some(w => w.id === cur)) procWorkSelect.value = cur;
+      }
+      function procButtons(p) {
+        const b = (act, label, cls) => `<button type="button" class="${cls || ""}" data-act="${act}" data-pid="${p.id}">${label}</button>`;
+        if (p.paused) return b("resume", "恢复");
+        switch (p.status) {
+          case "待安排": return b("schedule", "排班");
+          case "已排班": return b("start", "开工") + b("reschedule", "改期", "warn") + b("withdraw", "撤回", "danger");
+          case "进行中": return b("loghours", "记工时") + b("pause", "暂停", "warn") + b("submit", "报验");
+          case "待验收": return b("accept", "验收通过") + b("reject", "退回", "warn");
+          default: return "";
+        }
+      }
+      function renderProcs() {
+        const w = works.find(x => x.id === procWorkSelect.value);
+        if (!w) { procList.innerHTML = `<div class="empty">暂无作品</div>`; return; }
+        const list = processes.filter(p => p.workId === w.id).sort((a, b) => a.seq - b.seq);
+        procList.innerHTML = list.length ? list.map(p => {
+          const s = p.schedule;
+          return `<article class="proc-card ${p.paused ? "paused" : ""} ${p.status === "已完成" ? "done" : ""}" data-pid="${p.id}" data-name="${p.name}">
+            <b class="pname">#${p.seq} ${p.name}</b>
+            <span class="tag">${p.status}</span>
+            ${p.paused ? `<span class="tag warn">已暂停</span>` : ""}
+            ${p.settled ? `<span class="tag done">已结算</span>` : ""}
+            ${s
+              ? `<div class="meta">排班：${s.craftsmanName} ｜ ${s.date} ${s.startHour}:00 起 ${s.estHours}h ｜ ${s.rateType} ¥${s.rate}${s.rateType === "计时" ? "/小时" : "/件"}（排班时锁定）</div>`
+              : `<div class="meta">尚未排班</div>`}
+            <div class="meta">累计工时：${p.accumulatedHours}h</div>
+            <div class="logline">${p.logs.slice(-3).join(" ；")}</div>
+            <div class="actions">${procButtons(p)}</div>
+          </article>`;
+        }).join("") : `<div class="empty">该作品暂无工序，请添加</div>`;
+      }
+      function renderWithdrawals() {
+        withdrawList.innerHTML = withdrawals.length ? withdrawals.slice(0, 8).map(r =>
+          `<div class="logline">${r.createdAt} ｜ ${r.workLabel}·${r.processName} ｜ 原排班 ${r.craftsmanName} ${r.schedule.date} ${r.schedule.startHour}:00 ${r.schedule.estHours}h ｜ 原因：${r.reason}</div>`
+        ).join("") : `<div class="empty">暂无撤回记录</div>`;
+      }
+      function renderSettle() {
+        const cur = settleCraftSelect.value;
+        settleCraftSelect.innerHTML = craftsmen.map(c => `<option value="${c.id}">${c.name}（${c.rateType} ¥${c.rate}）</option>`).join("");
+        if (craftsmen.some(c => c.id === cur)) settleCraftSelect.value = cur;
+        const cid = settleCraftSelect.value;
+        const pending = processes.filter(p => p.schedule && p.schedule.craftsmanId === cid && p.status === "已完成" && !p.settled);
+        settleItems.innerHTML = pending.length ? pending.map(p => {
+          const s = p.schedule;
+          return `<label class="settle-item"><input type="checkbox" class="settle-check" value="${p.id}">
+            ${workLabel(p.workId)}·${p.name} ｜ ${s.rateType} ¥${s.rate} ｜ ${s.rateType === "计时" ? p.accumulatedHours + "h" : "1件"} ｜ ${yuan(itemAmount(p))}
+          </label>`;
+        }).join("") : `<div class="empty">该工匠暂无待结算工序</div>`;
+        settleList.innerHTML = settlements.length ? settlements.map(st => `
+          <div class="settle-row" data-sid="${st.id}">
+            <b>${st.seq}</b> <span class="tag ${st.status === "已锁定" ? "done" : st.status === "已冲正" ? "warn" : ""}">${st.status}</span>
+            <div class="meta">${st.craftsmanName} ｜ ${st.rateType} ｜ 合计 ${yuan(st.total)} ｜ 创建 ${st.createdAt}${st.lockedAt ? " ｜ 锁定 " + st.lockedAt : ""}</div>
+            ${st.items.map(it => `<div class="logline">${it.workLabel}·${it.processName} ｜ ${st.rateType === "计时" ? it.hours + "h × " + yuan(it.rate) : it.pieces + "件 × " + yuan(it.rate)} = ${yuan(it.amount)}</div>`).join("")}
+            <div class="actions">
+              ${st.status === "草稿" ? `<button type="button" data-act="lock" data-sid="${st.id}">锁定</button><button type="button" class="danger" data-act="void" data-sid="${st.id}">作废</button>` : ""}
+              ${st.status === "已锁定" ? `<button type="button" class="warn" data-act="reverse" data-sid="${st.id}">冲正</button>` : ""}
+            </div>
+          </div>`).join("") : `<div class="empty">暂无结算单</div>`;
+        reversalList.innerHTML = reversals.length ? reversals.map(r =>
+          `<div class="logline">${r.createdAt} ｜ 冲正原单 ${r.settlementSeq}（${r.craftsmanName}）｜ 金额 ${yuan(r.amount)} ｜ 原因：${r.reason}</div>`
+        ).join("") : `<div class="empty">暂无冲正记录</div>`;
+      }
+      function renderSched() {
+        renderCrafts();
+        refreshWorkSelect();
+        renderProcs();
+        renderWithdrawals();
+        renderSettle();
+      }
+
+      /* ---------- 弹窗 ---------- */
+      let schedPid = null, reschedPid = null, askCb = null;
+      function openSchedule(pid) {
+        schedPid = pid;
+        const e = $("#schedErr"); e.textContent = ""; e.className = "msg";
+        $("#schedCraft").innerHTML = craftsmen.map(c =>
+          `<option value="${c.id}">${c.name}（${c.skills.join("、")}｜${c.rateType} ¥${c.rate}）</option>`).join("");
+        $("#schedDate").value = new Date().toISOString().slice(0, 10);
+        $("#schedStart").value = 9;
+        $("#schedHours").value = 4;
+        scheduleDialog.showModal();
+      }
+      $("#schedOk").addEventListener("click", () => {
+        const r = scheduleProcess(schedPid, $("#schedCraft").value, $("#schedDate").value, Number($("#schedStart").value), Number($("#schedHours").value));
+        if (r.ok) { scheduleDialog.close(); flash(actionMsg, r.msg, true); }
+        else { const e = $("#schedErr"); e.textContent = r.msg; e.className = "msg err"; }
+      });
+      $("#schedCancel").addEventListener("click", () => scheduleDialog.close());
+      function openReschedule(pid) {
+        reschedPid = pid;
+        const p = findProc(pid);
+        const e = $("#reschedErr"); e.textContent = ""; e.className = "msg";
+        $("#reschedInfo").textContent = p.schedule ? `当前：${p.schedule.craftsmanName} ${p.schedule.date} ${p.schedule.startHour}:00 起 ${p.schedule.estHours}h` : "";
+        $("#reschedDate").value = p.schedule ? p.schedule.date : "";
+        $("#reschedStart").value = p.schedule ? p.schedule.startHour : 9;
+        rescheduleDialog.showModal();
+      }
+      $("#reschedOk").addEventListener("click", () => {
+        const r = rescheduleProcess(reschedPid, $("#reschedDate").value, Number($("#reschedStart").value));
+        if (r.ok) { rescheduleDialog.close(); flash(actionMsg, r.msg, true); }
+        else if (r.withdrawn) { rescheduleDialog.close(); flash(actionMsg, r.msg, false); }
+        else { const e = $("#reschedErr"); e.textContent = r.msg; e.className = "msg err"; }
+      });
+      $("#reschedCancel").addEventListener("click", () => rescheduleDialog.close());
+      function askInput(title, type, value, cb) {
+        $("#askTitle").textContent = title;
+        const input = $("#askInput");
+        input.type = type;
+        input.value = value;
+        const e = $("#askErr"); e.textContent = ""; e.className = "msg";
+        askCb = cb;
+        askDialog.showModal();
+      }
+      $("#askOk").addEventListener("click", () => {
+        const v = $("#askInput").value.trim();
+        if (!v) { const e = $("#askErr"); e.textContent = "内容不能为空"; e.className = "msg err"; return; }
+        const err = askCb && askCb(v);
+        if (err) { const e = $("#askErr"); e.textContent = err; e.className = "msg err"; return; }
+        askDialog.close();
+      });
+      $("#askCancel").addEventListener("click", () => askDialog.close());
+
+      /* ---------- 事件 ---------- */
+      procList.addEventListener("click", ev => {
+        const btn = ev.target.closest("button[data-act]");
+        if (!btn) return;
+        const pid = btn.dataset.pid;
+        let r;
+        switch (btn.dataset.act) {
+          case "schedule": openSchedule(pid); return;
+          case "reschedule": openReschedule(pid); return;
+          case "start": r = tryTransition(pid, "进行中"); break;
+          case "submit": r = tryTransition(pid, "待验收"); break;
+          case "accept": r = tryTransition(pid, "已完成"); break;
+          case "pause": r = pauseProcess(pid); break;
+          case "resume": r = resumeProcess(pid); break;
+          case "loghours":
+            askInput("登记实际工时（小时）", "number", "1", v => {
+              const res = logHours(pid, Number(v));
+              if (!res.ok) return res.msg;
+              flash(actionMsg, res.msg, true);
+            });
+            return;
+          case "withdraw":
+            askInput("撤回原因（整单撤回）", "text", "", v => {
+              const res = withdrawProcess(pid, v);
+              if (!res.ok) return res.msg;
+              flash(actionMsg, res.msg, true);
+            });
+            return;
+          case "reject":
+            askInput("退回返工原因", "text", "", v => {
+              const res = tryTransition(pid, "进行中", v);
+              if (!res.ok) return res.msg;
+              flash(actionMsg, res.msg, true);
+            });
+            return;
+        }
+        if (r) flash(actionMsg, r.msg, r.ok);
+      });
+
+      craftForm.addEventListener("submit", ev => {
+        ev.preventDefault();
+        const data = new FormData(craftForm);
+        const name = (data.get("cname") || "").toString().trim();
+        const skills = data.getAll("skills").map(String);
+        const dailyCap = Number(data.get("dailyCap"));
+        const rateType = data.get("rateType").toString();
+        const rate = Number(data.get("rate"));
+        if (!name) return flash(craftMsg, "请填写工匠姓名", false);
+        if (!skills.length) return flash(craftMsg, "请至少勾选一项可承担工序", false);
+        if (!(dailyCap >= 1 && dailyCap <= 24)) return flash(craftMsg, "日工时上限需在 1–24 之间", false);
+        if (!(rate > 0)) return flash(craftMsg, "费率必须大于 0", false);
+        craftsmen.push({ id: uid(), name, skills, dailyCap, rateType, rate, logs: [`${nowStr()} 登记工匠`] });
+        saveSched(); renderSched();
+        craftForm.reset();
+        flash(craftMsg, `工匠 ${name} 已登记`, true);
+      });
+      craftList.addEventListener("click", ev => {
+        const btn = ev.target.closest('button[data-act="rate"]');
+        if (!btn) return;
+        const row = btn.closest(".craft-row");
+        const r = adjustRate(row.dataset.cid, row.querySelector(".type-select").value, Number(row.querySelector(".rate-input").value));
+        flash(craftMsg, r.msg, r.ok);
+      });
+      addProcBtn.addEventListener("click", () => {
+        const w = works.find(x => x.id === procWorkSelect.value);
+        if (!w) return flash(actionMsg, "请先选择作品", false);
+        const name = procNameSelect.value;
+        if (processes.some(p => p.workId === w.id && p.name === name))
+          return flash(actionMsg, `该作品已存在「${name}」工序`, false);
+        const seq = Math.max(0, ...processes.filter(p => p.workId === w.id).map(p => p.seq)) + 1;
+        processes.push({
+          id: uid(), workId: w.id, name, seq, status: "待安排", paused: false,
+          schedule: null, accumulatedHours: 0, settled: false, settlementId: null,
+          logs: [`${nowStr()} 创建工序「${name}」`]
+        });
+        saveSched(); renderSched();
+        flash(actionMsg, `已为「${w.theme}」添加「${name}」工序`, true);
+      });
+      procWorkSelect.addEventListener("input", renderProcs);
+      settleCraftSelect.addEventListener("input", renderSettle);
+      $("#createSettleBtn").addEventListener("click", () => {
+        const ids = [...document.querySelectorAll(".settle-check:checked")].map(c => c.value);
+        const r = createSettlement(settleCraftSelect.value, ids);
+        flash(settleMsg, r.msg, r.ok);
+      });
+      settleList.addEventListener("click", ev => {
+        const btn = ev.target.closest("button[data-act]");
+        if (!btn) return;
+        const sid = btn.dataset.sid;
+        let r;
+        if (btn.dataset.act === "lock") r = lockSettlement(sid);
+        else if (btn.dataset.act === "void") r = voidSettlement(sid);
+        else if (btn.dataset.act === "reverse") {
+          askInput("冲正原因（冲正记录将引用原结算单）", "text", "", v => {
+            const res = reverseSettlement(sid, v);
+            if (!res.ok) return res.msg;
+            flash(settleMsg, res.msg, true);
+          });
+          return;
+        }
+        if (r) flash(settleMsg, r.msg, r.ok);
+      });
+
+      /* 新作品自动生成标准工序链 */
+      document.querySelector("#workForm").addEventListener("submit", () => {
+        setTimeout(() => {
+          const w = works[0];
+          if (w && !processes.some(p => p.workId === w.id))
+            defaultChain(w).forEach(p => processes.push(p));
+          saveSched(); renderSched();
+        }, 0);
+      });
+
+      /* 供浏览器端验证使用的内部接口 */
+      window._sched = {
+        state: () => ({ craftsmen, processes, settlements, reversals, withdrawals }),
+        scheduleProcess, tryTransition, pauseProcess, resumeProcess, logHours,
+        withdrawProcess, rescheduleProcess, adjustRate,
+        createSettlement, lockSettlement, voidSettlement, reverseSettlement
+      };
+
+      saveSched();
+      renderSched();
+    })();
   </script>
 </body>
 </html>
