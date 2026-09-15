@@ -435,6 +435,7 @@
         craft: "zfl42Craftsmen", proc: "zfl42Processes", settle: "zfl42Settlements",
         rev: "zfl42Reversals", wd: "zfl42Withdrawals", seq: "zfl42SettleSeq"
       };
+      const LOCK_NAME = "zfl42SchedLock";
       const load = key => JSON.parse(localStorage.getItem(key) || "null");
       const uid = () => crypto.randomUUID();
       const nowStr = () => new Date().toLocaleString();
@@ -495,6 +496,33 @@
         localStorage.setItem(K.seq, JSON.stringify(settleSeq));
       }
 
+      /* 保存前从 localStorage 重读最新状态，避免用本标签旧快照覆盖其他标签的写入 */
+      function syncFromStorage() {
+        const c = load(K.craft); if (c) craftsmen = c;
+        const p = load(K.proc); if (p) processes = p;
+        settlements = load(K.settle) || [];
+        reversals = load(K.rev) || [];
+        withdrawals = load(K.wd) || [];
+        const s = load(K.seq); if (s) settleSeq = s;
+      }
+
+      /* 跨标签互斥事务：Web Locks 锁内「重读最新数据 → 校验/变更 → 写回」，
+         两个标签同时提交时只有一个成功，另一个基于最新数据得到冲突提示；
+         仅在真正写入时重渲染，其他标签的同步由 storage 事件负责 */
+      function transact(mutate) {
+        const run = () => {
+          syncFromStorage();
+          const r = mutate();
+          if (r && (r.ok || r.changed)) {
+            saveSched();
+            renderSched();
+          }
+          return r;
+        };
+        if (navigator.locks && navigator.locks.request) return navigator.locks.request(LOCK_NAME, run);
+        return Promise.resolve().then(run);
+      }
+
       function flash(el, text, ok) {
         el.textContent = text;
         el.className = "msg " + (ok ? "ok" : "err");
@@ -547,9 +575,7 @@
           rateType: c.rateType, rate: c.rate, scheduledAt: nowStr()
         };
         p.status = "已排班";
-        p.logs.push(`${nowStr()} 排班：${c.name} ${date} ${startHour}:00 起 ${estHours}h，${c.rateType} ¥${c.rate}（排班时锁定）`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `排班成功：${c.name} ${date} ${startHour}:00 起 ${estHours}h，费率按排班时点锁定` };
+        p.logs.push(`${nowStr()} 排班：${c.name} ${date} ${startHour}:00 起 ${estHours}h，${c.rateType} ¥${c.rate}（排班时锁定）`);        return { ok: true, msg: `排班成功：${c.name} ${date} ${startHour}:00 起 ${estHours}h，费率按排班时点锁定` };
       }
 
       /* ---------- 工序状态机 ---------- */
@@ -565,9 +591,7 @@
         if (target === "已完成" && p.accumulatedHours === 0 && p.schedule)
           p.accumulatedHours = p.schedule.estHours;
         p.status = target;
-        p.logs.push(`${nowStr()} 流转为「${target}」${reason ? "，原因：" + reason : ""}`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `「${p.name}」已流转为「${target}」` };
+        p.logs.push(`${nowStr()} 流转为「${target}」${reason ? "，原因：" + reason : ""}`);        return { ok: true, msg: `「${p.name}」已流转为「${target}」` };
       }
 
       /* ---------- 暂停 / 恢复（保留原排班与累计工时） ---------- */
@@ -578,18 +602,14 @@
         if (!["已排班", "进行中"].includes(p.status))
           return { ok: false, msg: `仅「已排班/进行中」可暂停，当前为「${p.status}」` };
         p.paused = true;
-        p.logs.push(`${nowStr()} 暂停（保留排班与累计工时 ${p.accumulatedHours}h）`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `「${p.name}」已暂停，原排班与累计工时保留` };
+        p.logs.push(`${nowStr()} 暂停（保留排班与累计工时 ${p.accumulatedHours}h）`);        return { ok: true, msg: `「${p.name}」已暂停，原排班与累计工时保留` };
       }
       function resumeProcess(pid) {
         const p = findProc(pid);
         if (!p) return { ok: false, msg: "工序不存在" };
         if (!p.paused) return { ok: false, msg: "未处于暂停状态" };
         p.paused = false;
-        p.logs.push(`${nowStr()} 恢复（排班与累计工时 ${p.accumulatedHours}h 保持不变）`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `「${p.name}」已恢复，原排班与累计工时 ${p.accumulatedHours}h 保留` };
+        p.logs.push(`${nowStr()} 恢复（排班与累计工时 ${p.accumulatedHours}h 保持不变）`);        return { ok: true, msg: `「${p.name}」已恢复，原排班与累计工时 ${p.accumulatedHours}h 保留` };
       }
       function logHours(pid, hours) {
         const p = findProc(pid);
@@ -598,9 +618,7 @@
         if (p.status !== "进行中") return { ok: false, msg: `仅「进行中」可记工时，当前为「${p.status}」` };
         if (!(hours > 0)) return { ok: false, msg: "工时必须大于 0" };
         p.accumulatedHours = Math.round((p.accumulatedHours + hours) * 100) / 100;
-        p.logs.push(`${nowStr()} 记工时 +${hours}h，累计 ${p.accumulatedHours}h`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `已记工时 ${hours}h，累计 ${p.accumulatedHours}h` };
+        p.logs.push(`${nowStr()} 记工时 +${hours}h，累计 ${p.accumulatedHours}h`);        return { ok: true, msg: `已记工时 ${hours}h，累计 ${p.accumulatedHours}h` };
       }
 
       /* ---------- 撤回与改期 ---------- */
@@ -620,9 +638,7 @@
         if (!p) return { ok: false, msg: "工序不存在" };
         if (p.status !== "已排班" || !p.schedule) return { ok: false, msg: `仅「已排班」工序可撤回，当前为「${p.status}」` };
         if (!reason) return { ok: false, msg: "撤回必须填写原因" };
-        doWithdraw(p, reason);
-        saveSched(); renderSched();
-        return { ok: true, msg: `「${p.name}」排班已整单撤回` };
+        doWithdraw(p, reason);        return { ok: true, msg: `「${p.name}」排班已整单撤回` };
       }
       function rescheduleProcess(pid, date, startHour) {
         const p = findProc(pid);
@@ -636,14 +652,11 @@
         const err = validateSlot(p.schedule.craftsmanId, p.name, date, startHour, est, p.id);
         if (err) {
           doWithdraw(p, `改期冲突：${err}`);
-          saveSched(); renderSched();
-          return { ok: false, withdrawn: true, msg: `改期冲突，整单已撤回：${err}` };
+          return { ok: false, withdrawn: true, changed: true, msg: `改期冲突，整单已撤回：${err}` };
         }
         p.schedule.date = date;
         p.schedule.startHour = startHour;
-        p.logs.push(`${nowStr()} 改期至 ${date} ${startHour}:00（费率保持排班时锁定值）`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `改期成功：${date} ${startHour}:00 起 ${est}h` };
+        p.logs.push(`${nowStr()} 改期至 ${date} ${startHour}:00（费率保持排班时锁定值）`);        return { ok: true, msg: `改期成功：${date} ${startHour}:00 起 ${est}h` };
       }
 
       /* ---------- 工匠费率调整（已排班工序保持快照） ---------- */
@@ -653,9 +666,7 @@
         if (!(rate > 0)) return { ok: false, msg: "费率必须大于 0" };
         c.rateType = rateType;
         c.rate = rate;
-        c.logs.push(`${nowStr()} 费率调整为 ${rateType} ¥${rate}（已排班工序保持原锁定费率）`);
-        saveSched(); renderSched();
-        return { ok: true, msg: `${c.name} 费率已调整为 ${rateType} ¥${rate}，已排班工序费率不变` };
+        c.logs.push(`${nowStr()} 费率调整为 ${rateType} ¥${rate}（已排班工序保持原锁定费率）`);        return { ok: true, msg: `${c.name} 费率已调整为 ${rateType} ¥${rate}，已排班工序费率不变` };
       }
 
       /* ---------- 结算 ---------- */
@@ -691,9 +702,7 @@
         };
         st.total = Math.round(st.items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
         settlements.unshift(st);
-        items.forEach(p => { p.settled = true; p.settlementId = st.id; p.logs.push(`${nowStr()} 纳入结算单 ${st.seq}`); });
-        saveSched(); renderSched();
-        return { ok: true, msg: `结算单 ${st.seq} 已生成（草稿），合计 ${yuan(st.total)}` };
+        items.forEach(p => { p.settled = true; p.settlementId = st.id; p.logs.push(`${nowStr()} 纳入结算单 ${st.seq}`); });        return { ok: true, msg: `结算单 ${st.seq} 已生成（草稿），合计 ${yuan(st.total)}` };
       }
       function lockSettlement(sid) {
         const st = settlements.find(s => s.id === sid);
@@ -701,9 +710,7 @@
         if (st.status !== "草稿")
           return { ok: false, msg: st.status === "已锁定" ? "结算单已锁定，不可修改" : "已冲正的单据不可再操作" };
         st.status = "已锁定";
-        st.lockedAt = nowStr();
-        saveSched(); renderSched();
-        return { ok: true, msg: `结算单 ${st.seq} 已锁定，不可修改` };
+        st.lockedAt = nowStr();        return { ok: true, msg: `结算单 ${st.seq} 已锁定，不可修改` };
       }
       function voidSettlement(sid) {
         const st = settlements.find(s => s.id === sid);
@@ -713,9 +720,7 @@
         st.items.forEach(it => {
           const p = findProc(it.processId);
           if (p) { p.settled = false; p.settlementId = null; }
-        });
-        saveSched(); renderSched();
-        return { ok: true, msg: `草稿单 ${st.seq} 已作废，工序释放为待结算` };
+        });        return { ok: true, msg: `草稿单 ${st.seq} 已作废，工序释放为待结算` };
       }
       function reverseSettlement(sid, reason) {
         const st = settlements.find(s => s.id === sid);
@@ -733,9 +738,7 @@
             p.settled = false; p.settlementId = null;
             p.logs.push(`${nowStr()} 结算单 ${st.seq} 被冲正：${reason}`);
           }
-        });
-        saveSched(); renderSched();
-        return { ok: true, msg: `结算单 ${st.seq} 已冲正，冲正记录已引用原单` };
+        });        return { ok: true, msg: `结算单 ${st.seq} 已冲正，冲正记录已引用原单` };
       }
 
       /* ---------- 渲染 ---------- */
@@ -842,8 +845,8 @@
         $("#schedHours").value = 4;
         scheduleDialog.showModal();
       }
-      $("#schedOk").addEventListener("click", () => {
-        const r = scheduleProcess(schedPid, $("#schedCraft").value, $("#schedDate").value, Number($("#schedStart").value), Number($("#schedHours").value));
+      $("#schedOk").addEventListener("click", async () => {
+        const r = await transact(() => scheduleProcess(schedPid, $("#schedCraft").value, $("#schedDate").value, Number($("#schedStart").value), Number($("#schedHours").value)));
         if (r.ok) { scheduleDialog.close(); flash(actionMsg, r.msg, true); }
         else { const e = $("#schedErr"); e.textContent = r.msg; e.className = "msg err"; }
       });
@@ -857,8 +860,8 @@
         $("#reschedStart").value = p.schedule ? p.schedule.startHour : 9;
         rescheduleDialog.showModal();
       }
-      $("#reschedOk").addEventListener("click", () => {
-        const r = rescheduleProcess(reschedPid, $("#reschedDate").value, Number($("#reschedStart").value));
+      $("#reschedOk").addEventListener("click", async () => {
+        const r = await transact(() => rescheduleProcess(reschedPid, $("#reschedDate").value, Number($("#reschedStart").value)));
         if (r.ok) { rescheduleDialog.close(); flash(actionMsg, r.msg, true); }
         else if (r.withdrawn) { rescheduleDialog.close(); flash(actionMsg, r.msg, false); }
         else { const e = $("#reschedErr"); e.textContent = r.msg; e.className = "msg err"; }
@@ -873,17 +876,17 @@
         askCb = cb;
         askDialog.showModal();
       }
-      $("#askOk").addEventListener("click", () => {
+      $("#askOk").addEventListener("click", async () => {
         const v = $("#askInput").value.trim();
         if (!v) { const e = $("#askErr"); e.textContent = "内容不能为空"; e.className = "msg err"; return; }
-        const err = askCb && askCb(v);
+        const err = askCb && (await askCb(v));
         if (err) { const e = $("#askErr"); e.textContent = err; e.className = "msg err"; return; }
         askDialog.close();
       });
       $("#askCancel").addEventListener("click", () => askDialog.close());
 
       /* ---------- 事件 ---------- */
-      procList.addEventListener("click", ev => {
+      procList.addEventListener("click", async ev => {
         const btn = ev.target.closest("button[data-act]");
         if (!btn) return;
         const pid = btn.dataset.pid;
@@ -891,28 +894,28 @@
         switch (btn.dataset.act) {
           case "schedule": openSchedule(pid); return;
           case "reschedule": openReschedule(pid); return;
-          case "start": r = tryTransition(pid, "进行中"); break;
-          case "submit": r = tryTransition(pid, "待验收"); break;
-          case "accept": r = tryTransition(pid, "已完成"); break;
-          case "pause": r = pauseProcess(pid); break;
-          case "resume": r = resumeProcess(pid); break;
+          case "start": r = await transact(() => tryTransition(pid, "进行中")); break;
+          case "submit": r = await transact(() => tryTransition(pid, "待验收")); break;
+          case "accept": r = await transact(() => tryTransition(pid, "已完成")); break;
+          case "pause": r = await transact(() => pauseProcess(pid)); break;
+          case "resume": r = await transact(() => resumeProcess(pid)); break;
           case "loghours":
-            askInput("登记实际工时（小时）", "number", "1", v => {
-              const res = logHours(pid, Number(v));
+            askInput("登记实际工时（小时）", "number", "1", async v => {
+              const res = await transact(() => logHours(pid, Number(v)));
               if (!res.ok) return res.msg;
               flash(actionMsg, res.msg, true);
             });
             return;
           case "withdraw":
-            askInput("撤回原因（整单撤回）", "text", "", v => {
-              const res = withdrawProcess(pid, v);
+            askInput("撤回原因（整单撤回）", "text", "", async v => {
+              const res = await transact(() => withdrawProcess(pid, v));
               if (!res.ok) return res.msg;
               flash(actionMsg, res.msg, true);
             });
             return;
           case "reject":
-            askInput("退回返工原因", "text", "", v => {
-              const res = tryTransition(pid, "进行中", v);
+            askInput("退回返工原因", "text", "", async v => {
+              const res = await transact(() => tryTransition(pid, "进行中", v));
               if (!res.ok) return res.msg;
               flash(actionMsg, res.msg, true);
             });
@@ -921,7 +924,7 @@
         if (r) flash(actionMsg, r.msg, r.ok);
       });
 
-      craftForm.addEventListener("submit", ev => {
+      craftForm.addEventListener("submit", async ev => {
         ev.preventDefault();
         const data = new FormData(craftForm);
         const name = (data.get("cname") || "").toString().trim();
@@ -929,54 +932,58 @@
         const dailyCap = Number(data.get("dailyCap"));
         const rateType = data.get("rateType").toString();
         const rate = Number(data.get("rate"));
-        if (!name) return flash(craftMsg, "请填写工匠姓名", false);
-        if (!skills.length) return flash(craftMsg, "请至少勾选一项可承担工序", false);
-        if (!(dailyCap >= 1 && dailyCap <= 24)) return flash(craftMsg, "日工时上限需在 1–24 之间", false);
-        if (!(rate > 0)) return flash(craftMsg, "费率必须大于 0", false);
-        craftsmen.push({ id: uid(), name, skills, dailyCap, rateType, rate, logs: [`${nowStr()} 登记工匠`] });
-        saveSched(); renderSched();
-        craftForm.reset();
-        flash(craftMsg, `工匠 ${name} 已登记`, true);
+        const r = await transact(() => {
+          if (!name) return { ok: false, msg: "请填写工匠姓名" };
+          if (!skills.length) return { ok: false, msg: "请至少勾选一项可承担工序" };
+          if (!(dailyCap >= 1 && dailyCap <= 24)) return { ok: false, msg: "日工时上限需在 1–24 之间" };
+          if (!(rate > 0)) return { ok: false, msg: "费率必须大于 0" };
+          craftsmen.push({ id: uid(), name, skills, dailyCap, rateType, rate, logs: [`${nowStr()} 登记工匠`] });
+          return { ok: true, msg: `工匠 ${name} 已登记` };
+        });
+        if (r.ok) craftForm.reset();
+        flash(craftMsg, r.msg, r.ok);
       });
-      craftList.addEventListener("click", ev => {
+      craftList.addEventListener("click", async ev => {
         const btn = ev.target.closest('button[data-act="rate"]');
         if (!btn) return;
         const row = btn.closest(".craft-row");
-        const r = adjustRate(row.dataset.cid, row.querySelector(".type-select").value, Number(row.querySelector(".rate-input").value));
+        const r = await transact(() => adjustRate(row.dataset.cid, row.querySelector(".type-select").value, Number(row.querySelector(".rate-input").value)));
         flash(craftMsg, r.msg, r.ok);
       });
-      addProcBtn.addEventListener("click", () => {
+      addProcBtn.addEventListener("click", async () => {
         const w = works.find(x => x.id === procWorkSelect.value);
         if (!w) return flash(actionMsg, "请先选择作品", false);
         const name = procNameSelect.value;
-        if (processes.some(p => p.workId === w.id && p.name === name))
-          return flash(actionMsg, `该作品已存在「${name}」工序`, false);
-        const seq = Math.max(0, ...processes.filter(p => p.workId === w.id).map(p => p.seq)) + 1;
-        processes.push({
-          id: uid(), workId: w.id, name, seq, status: "待安排", paused: false,
-          schedule: null, accumulatedHours: 0, settled: false, settlementId: null,
-          logs: [`${nowStr()} 创建工序「${name}」`]
+        const r = await transact(() => {
+          if (processes.some(p => p.workId === w.id && p.name === name))
+            return { ok: false, msg: `该作品已存在「${name}」工序` };
+          const seq = Math.max(0, ...processes.filter(p => p.workId === w.id).map(p => p.seq)) + 1;
+          processes.push({
+            id: uid(), workId: w.id, name, seq, status: "待安排", paused: false,
+            schedule: null, accumulatedHours: 0, settled: false, settlementId: null,
+            logs: [`${nowStr()} 创建工序「${name}」`]
+          });
+          return { ok: true, msg: `已为「${w.theme}」添加「${name}」工序` };
         });
-        saveSched(); renderSched();
-        flash(actionMsg, `已为「${w.theme}」添加「${name}」工序`, true);
+        flash(actionMsg, r.msg, r.ok);
       });
       procWorkSelect.addEventListener("input", renderProcs);
       settleCraftSelect.addEventListener("input", renderSettle);
-      $("#createSettleBtn").addEventListener("click", () => {
+      $("#createSettleBtn").addEventListener("click", async () => {
         const ids = [...document.querySelectorAll(".settle-check:checked")].map(c => c.value);
-        const r = createSettlement(settleCraftSelect.value, ids);
+        const r = await transact(() => createSettlement(settleCraftSelect.value, ids));
         flash(settleMsg, r.msg, r.ok);
       });
-      settleList.addEventListener("click", ev => {
+      settleList.addEventListener("click", async ev => {
         const btn = ev.target.closest("button[data-act]");
         if (!btn) return;
         const sid = btn.dataset.sid;
         let r;
-        if (btn.dataset.act === "lock") r = lockSettlement(sid);
-        else if (btn.dataset.act === "void") r = voidSettlement(sid);
+        if (btn.dataset.act === "lock") r = await transact(() => lockSettlement(sid));
+        else if (btn.dataset.act === "void") r = await transact(() => voidSettlement(sid));
         else if (btn.dataset.act === "reverse") {
-          askInput("冲正原因（冲正记录将引用原结算单）", "text", "", v => {
-            const res = reverseSettlement(sid, v);
+          askInput("冲正原因（冲正记录将引用原结算单）", "text", "", async v => {
+            const res = await transact(() => reverseSettlement(sid, v));
             if (!res.ok) return res.msg;
             flash(settleMsg, res.msg, true);
           });
@@ -988,19 +995,40 @@
       /* 新作品自动生成标准工序链 */
       document.querySelector("#workForm").addEventListener("submit", () => {
         setTimeout(() => {
-          const w = works[0];
-          if (w && !processes.some(p => p.workId === w.id))
-            defaultChain(w).forEach(p => processes.push(p));
-          saveSched(); renderSched();
+          transact(() => {
+            const w = works[0];
+            if (w && !processes.some(p => p.workId === w.id)) {
+              defaultChain(w).forEach(p => processes.push(p));
+              return { ok: true };
+            }
+            return { ok: false };
+          });
         }, 0);
       });
 
-      /* 供浏览器端验证使用的内部接口 */
+      /* 其他标签写入后，本标签同步最新状态 */
+      window.addEventListener("storage", ev => {
+        if (ev.key && Object.values(K).includes(ev.key)) {
+          syncFromStorage();
+          renderSched();
+        }
+      });
+
+      /* 供浏览器端验证使用的内部接口（与 UI 同一事务路径） */
       window._sched = {
         state: () => ({ craftsmen, processes, settlements, reversals, withdrawals }),
-        scheduleProcess, tryTransition, pauseProcess, resumeProcess, logHours,
-        withdrawProcess, rescheduleProcess, adjustRate,
-        createSettlement, lockSettlement, voidSettlement, reverseSettlement
+        scheduleProcess: (...a) => transact(() => scheduleProcess(...a)),
+        tryTransition: (...a) => transact(() => tryTransition(...a)),
+        pauseProcess: (...a) => transact(() => pauseProcess(...a)),
+        resumeProcess: (...a) => transact(() => resumeProcess(...a)),
+        logHours: (...a) => transact(() => logHours(...a)),
+        withdrawProcess: (...a) => transact(() => withdrawProcess(...a)),
+        rescheduleProcess: (...a) => transact(() => rescheduleProcess(...a)),
+        adjustRate: (...a) => transact(() => adjustRate(...a)),
+        createSettlement: (...a) => transact(() => createSettlement(...a)),
+        lockSettlement: (...a) => transact(() => lockSettlement(...a)),
+        voidSettlement: (...a) => transact(() => voidSettlement(...a)),
+        reverseSettlement: (...a) => transact(() => reverseSettlement(...a))
       };
 
       saveSched();
